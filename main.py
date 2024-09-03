@@ -37,7 +37,7 @@ while os.path.exists(output_video_path):
     counter += 1
 
 # Flag to save the output video
-save_output = False  # Set to True if you want to save the output video
+save_output = True  # Set to True if you want to save the output video
 
 # Get video properties
 frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -46,7 +46,7 @@ fps = int(cap.get(cv2.CAP_PROP_FPS))
 
 # Initialize video writer if saving output
 if save_output:
-    fourcc = cv2.VideoWriter_fourcc(*'H264')  # Use H.264 codec
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Use a more compatible codec
     out = cv2.VideoWriter(output_video_path, fourcc, fps, (frame_width, frame_height))
 
 # Dictionary to store pebble information across frames
@@ -55,6 +55,15 @@ pebble_id = 0
 
 # Get the initial time
 prev_time = time.time()
+
+# Function to print the table
+def print_pebble_table(pebbles):
+    print("\nPebble Data:")
+    print(f"{'ID':<5}{'Size':<10}{'Average Speed (cm/s)':<25}")
+    print("-" * 40)
+    for pid, info in pebbles.items():
+        avg_speed = np.mean(info['speed']) if isinstance(info['speed'], list) else info['speed']
+        print(f"{pid:<5}{info['size']:<10}{avg_speed:<25.2f}")
 
 while True:
     ret, frame = cap.read()
@@ -101,16 +110,23 @@ while True:
         matched = False
         for pid in list(pebbles.keys()):
             prev_center = pebbles[pid]['positions'][-1]
-            distance = np.linalg.norm(np.array(center) - np.array(prev_center))
+            distance_px = np.linalg.norm(np.array(center) - np.array(prev_center))
+
+            # Calculate time difference
+            time_diff = time.time() - pebbles[pid]['last_updated']
+
+            # Convert distance from pixels to cm
+            distance_cm = distance_px / pixels_per_metric
+
+            # Calculate speed in cm/s
+            speed_cm_s = distance_cm / time_diff
 
             # If distance is small enough, consider it the same pebble
-            if distance < 50:
-                time_diff = time.time() - pebbles[pid]['last_updated']
-                speed = distance / time_diff / pixels_per_metric  # units per second
-
+            if distance_px < 50:  # This is in pixels
                 pebbles[pid]['positions'].append(center)
                 pebbles[pid]['last_updated'] = time.time()
-                pebbles[pid]['speed'] = speed
+                pebbles[pid]['speed'] = (pebbles[pid]['speed'] + speed_cm_s) / 2 if isinstance(pebbles[pid]['speed'], float) else [speed_cm_s]
+
                 pebbles[pid]['size'] = size_label
 
                 matched = True
@@ -119,7 +135,7 @@ while True:
                 cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
                 cv2.putText(frame, f'ID: {pid}', (x, y - 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
                 cv2.putText(frame, f'Size: {size_label}', (x, y - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-                cv2.putText(frame, f'Speed: {speed:.2f} units/s', (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+                cv2.putText(frame, f'Speed: {speed_cm_s:.2f} cm/s', (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
                 break
 
         # If no match found, register new pebble
@@ -135,7 +151,7 @@ while True:
             cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
             cv2.putText(frame, f'ID: {pebble_id}', (x, y - 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
             cv2.putText(frame, f'Size: {size_label}', (x, y - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-            cv2.putText(frame, f'Speed: 0 units/s', (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+            cv2.putText(frame, f'Speed: 0 cm/s', (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
 
             pebble_id += 1
 
@@ -155,3 +171,6 @@ cap.release()
 if save_output:
     out.release()
 cv2.destroyAllWindows()
+
+# Print the table at the end
+print_pebble_table(pebbles)
